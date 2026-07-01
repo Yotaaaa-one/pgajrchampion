@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<title>本部状況 | Jr Team Score</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="styles.css">
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script defer src="firebase-config.js"></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="page-header">
+  <p class="eyebrow">Headquarters Status</p>
+  <h1>本部 入力状況確認</h1>
+  <p>各ペア・各マッチの入力状況、同伴確認、本部確認を一覧で確認します。</p>
+</header>
+
+<nav class="top-nav">
+  <a href="index.html">トップ</a>
+  <a href="setup.html">設定</a>
+  <a href="round1.html">1日目入力</a>
+  <a href="round1_result.html">1R成績表</a>
+  <a href="final.html">順位決定戦入力</a>
+  <a href="final_result.html">順位決定戦表</a>
+  <a href="device_setup.html">端末設定</a>
+  <a href="scorer.html">スコアラー端末</a>
+  <a href="hq_status.html">本部状況</a>
+</nav>
+<div class="sync-strip"><span data-sync-status>同期状態確認中</span><span>最終更新：<b data-updated-at>-</b></span></div>
+
+
+<main class="container wide">
+  <section class="card">
+    <h2>1日目 入力状況</h2>
+    <div id="round1Summary" class="status-summary"></div>
+    <div class="table-scroll"><table id="round1StatusTable" class="status-table"></table></div>
+  </section>
+
+  <section class="card">
+    <h2>2日目 順位決定戦 入力状況</h2>
+    <div id="finalSummary" class="status-summary"></div>
+    <div class="table-scroll"><table id="finalStatusTable" class="status-table"></table></div>
+  </section>
+</main>
+
+<script>
+let data;
+function statusPill(conf) {
+  const st = JR.confirmationStatus(conf);
+  return `<span class="status-pill ${st.className}">${st.label}</span>`;
+}
+function fmtDate(v) {
+  return v ? new Date(v).toLocaleString('ja-JP') : '-';
+}
+function renderRound1() {
+  let total = 0, complete = 0, companion = 0, hq = 0;
+  const rows = [];
+  data.teams.forEach(team => {
+    for (let i = 0; i < 8; i++) {
+      total++;
+      const pair = JR.getPair(data, team.id, 'round1', i);
+      const scores = JR.getRound1Scores(data, team.id, i);
+      const holes = JR.completedHoles(scores);
+      const conf = JR.getConfirmation(data, 'round1', team.id, String(i));
+      if (holes === 18) complete++;
+      if (conf.companionConfirmed) companion++;
+      if (conf.hqConfirmed) hq++;
+      rows.push(`<tr><td>${JR.escapeHtml(team.block)}</td><td>${JR.escapeHtml(team.name)}</td><td>ペア${i+1}</td><td class="name-cell">${JR.escapeHtml(pair.label)}<br><small>${JR.escapeHtml(pair.schools || '')}</small></td><td>${holes}/18</td><td>${JR.formatNum(JR.sumScores(scores))}</td><td>${statusPill(conf)}</td><td>${JR.escapeHtml(conf.inputterName || '-')}</td><td>${fmtDate(conf.savedAt)}</td><td><button class="mini-button" data-kind="round1" data-key1="${team.id}" data-key2="${i}" data-action="confirm">本部確認</button><button class="mini-button secondary" data-kind="round1" data-key1="${team.id}" data-key2="${i}" data-action="unconfirm">解除</button></td></tr>`);
+    }
+  });
+  document.getElementById('round1Summary').innerHTML = `<span>入力完了 ${complete}/${total}</span><span>同伴確認 ${companion}/${total}</span><span>本部確認 ${hq}/${total}</span>`;
+  document.getElementById('round1StatusTable').innerHTML = `<thead><tr><th>Block</th><th>地区</th><th>ペア</th><th>選手</th><th>入力</th><th>TOTAL</th><th>状態</th><th>入力者</th><th>保存時刻</th><th>本部操作</th></tr></thead><tbody>${rows.join('')}</tbody>`;
+}
+function renderFinal() {
+  let total = 0, complete = 0, companion = 0, hq = 0;
+  const rows = [];
+  JR.getFinalMatches(data).forEach(match => {
+    for (let i = 0; i < 8; i++) {
+      total++;
+      const leftScores = JR.getFinalScores(data, match.key, match.leftTeamId, i);
+      const rightScores = JR.getFinalScores(data, match.key, match.rightTeamId, i);
+      const leftH = JR.completedHoles(leftScores);
+      const rightH = JR.completedHoles(rightScores);
+      const conf = JR.getConfirmation(data, 'final', match.key, String(i));
+      const calc = JR.calcFinalMatch(data, match).rows[i];
+      if (leftH === 18 && rightH === 18) complete++;
+      if (conf.companionConfirmed) companion++;
+      if (conf.hqConfirmed) hq++;
+      rows.push(`<tr><td>${JR.escapeHtml(match.title)}</td><td>ペア${i+1}</td><td class="name-cell">${JR.escapeHtml(match.leftTeam?.name || '-')}<br><small>${JR.escapeHtml(calc.leftPair.label)}</small></td><td>${leftH}/18</td><td>${JR.formatNum(calc.leftTotal)}</td><td>${calc.leftPointTotal}</td><td class="name-cell">${JR.escapeHtml(match.rightTeam?.name || '-')}<br><small>${JR.escapeHtml(calc.rightPair.label)}</small></td><td>${rightH}/18</td><td>${JR.formatNum(calc.rightTotal)}</td><td>${calc.rightPointTotal}</td><td>${statusPill(conf)}</td><td>${JR.escapeHtml(conf.inputterName || '-')}</td><td>${fmtDate(conf.savedAt)}</td><td><button class="mini-button" data-kind="final" data-key1="${match.key}" data-key2="${i}" data-action="confirm">本部確認</button><button class="mini-button secondary" data-kind="final" data-key1="${match.key}" data-key2="${i}" data-action="unconfirm">解除</button></td></tr>`);
+    }
+  });
+  document.getElementById('finalSummary').innerHTML = `<span>入力完了 ${complete}/${total}</span><span>同伴確認 ${companion}/${total}</span><span>本部確認 ${hq}/${total}</span>`;
+  document.getElementById('finalStatusTable').innerHTML = `<thead><tr><th>対戦</th><th>ペア</th><th>左チーム</th><th>入力</th><th>Total</th><th>pt</th><th>右チーム</th><th>入力</th><th>Total</th><th>pt</th><th>状態</th><th>入力者</th><th>保存時刻</th><th>本部操作</th></tr></thead><tbody>${rows.join('')}</tbody>`;
+}
+function bindActions() {
+  document.body.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const patch = btn.dataset.action === 'confirm'
+      ? { hqConfirmed: true, hqConfirmedAt: new Date().toISOString() }
+      : { hqConfirmed: false, hqConfirmedAt: '' };
+    JR.updateConfirmation(data, btn.dataset.kind, btn.dataset.key1, String(btn.dataset.key2), patch);
+    JR.saveData(data);
+    JR.toast(btn.dataset.action === 'confirm' ? '本部確認済みにしました' : '本部確認を解除しました');
+    renderRound1(); renderFinal();
+  });
+}
+document.addEventListener('DOMContentLoaded', () => {
+  data = JR.loadData();
+  JR.onDataChanged(next => { data = next; renderRound1(); renderFinal(); });
+  renderRound1();
+  renderFinal();
+  bindActions();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<title>端末設定 | Jr Team Score</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="styles.css">
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script defer src="firebase-config.js"></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="page-header">
+  <p class="eyebrow">Device Setup</p>
+  <h1>スコアラー端末設定</h1>
+  <p>本部でこの端末を「1日目の組端末」または「2日目の順位決定戦端末」として固定します。</p>
+</header>
+
+<nav class="top-nav">
+  <a href="index.html">トップ</a>
+  <a href="setup.html">設定</a>
+  <a href="round1.html">1日目入力</a>
+  <a href="round1_result.html">1R成績表</a>
+  <a href="final.html">順位決定戦入力</a>
+  <a href="final_result.html">順位決定戦表</a>
+  <a href="device_setup.html">端末設定</a>
+  <a href="scorer.html">スコアラー端末</a>
+  <a href="hq_status.html">本部状況</a>
+</nav>
+<div class="sync-strip"><span data-sync-status>同期状態確認中</span><span>最終更新：<b data-updated-at>-</b></span></div>
+
+
+<main class="container">
+  <section class="card status-card">
+    <h2>現在の端末設定</h2>
+    <div id="currentDevice"></div>
+    <div class="button-row">
+      <a class="button secondary" href="scorer.html">スコアラー端末を開く</a>
+      <button class="danger" id="unlockDevice">端末固定を解除</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>新しく端末を固定</h2>
+    <div class="form-grid slim">
+      <label>入力日<select id="modeSelect"><option value="round1">1日目：組端末</option><option value="final">2日目：順位決定戦端末</option></select></label>
+      <label>入力者名・組名など<input id="inputterName" placeholder="例：3組 / 競技委員 / 代表選手"></label>
+    </div>
+
+    <div id="round1Setup" class="setup-mode-panel">
+      <h3>1日目 組端末の割当</h3>
+      <p class="muted">各組は2チーム・2ペアで運用するため、この端末では2枠だけ割り当てます。</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>入力対象</th><th>チーム</th><th>ペア</th><th>選手</th></tr></thead>
+          <tbody id="round1Slots"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="finalSetup" class="setup-mode-panel" hidden>
+      <h3>2日目 順位決定戦端末の割当</h3>
+      <p class="muted">2日目は「対戦＋ペア番号」で1マッチ分を固定します。入力は左右チームの18ホールスコアのみです。</p>
+      <div class="form-grid slim">
+        <label>対戦<select id="finalMatchSelect"></select></label>
+        <label>ペア<select id="finalPairSelect"></select></label>
+      </div>
+      <div id="finalPreview" class="versus-card"></div>
+    </div>
+
+    <div class="button-row">
+      <button id="saveDevice">この端末を固定</button>
+    </div>
+  </section>
+</main>
+
+<script>
+let data;
+function pairText(teamId, pairIndex, day) {
+  const pair = JR.getPair(data, teamId, day, pairIndex);
+  return `${pair.label}${pair.schools ? '｜' + pair.schools : ''}`;
+}
+function renderCurrent() {
+  const current = JR.getDeviceAssignment();
+  const el = document.getElementById('currentDevice');
+  if (!current) {
+    el.innerHTML = '<p class="muted">この端末はまだ固定されていません。</p>';
+    return;
+  }
+  if (current.mode === 'round1') {
+    const rows = (current.round1Assignments || []).map((a, i) => {
+      const team = JR.getTeam(data, a.teamId);
+      return `<li>${i+1}. ${JR.escapeHtml(team?.name || '-')} ペア${Number(a.pairIndex)+1}<br><small>${JR.escapeHtml(pairText(a.teamId, Number(a.pairIndex), 'round1'))}</small></li>`;
+    }).join('');
+    el.innerHTML = `<div class="device-card"><strong>${JR.deviceModeLabel(current.mode)}</strong><p>入力者：${JR.escapeHtml(current.inputterName || '-')}</p><ul>${rows}</ul></div>`;
+    return;
+  }
+  const match = JR.getFinalMatches(data).find(m => m.key === current.matchKey);
+  const pairIndex = Number(current.pairIndex || 0);
+  el.innerHTML = `<div class="device-card"><strong>${JR.deviceModeLabel(current.mode)}</strong><p>入力者：${JR.escapeHtml(current.inputterName || '-')}</p><p>${JR.escapeHtml(match?.title || '-')}　ペア${pairIndex+1}</p><p>${JR.escapeHtml(match?.leftTeam?.name || '-')} VS ${JR.escapeHtml(match?.rightTeam?.name || '-')}</p></div>`;
+}
+function renderRound1Slots() {
+  const slots = Array.from({length:2}, (_, i) => {
+    const teamId = data.teams[i]?.id || data.teams[0].id;
+    const teamOptions = data.teams.map(t => `<option value="${t.id}" ${t.id === teamId ? 'selected' : ''}>${JR.escapeHtml(t.name)}（${t.block}）</option>`).join('');
+    const pairOptions = Array.from({length:8}, (_, p) => `<option value="${p}">ペア${p+1}</option>`).join('');
+    return `<tr data-slot="${i}"><th>${i+1}</th><td><select class="slotTeam">${teamOptions}</select></td><td><select class="slotPair">${pairOptions}</select></td><td class="slotPreview"></td></tr>`;
+  }).join('');
+  document.getElementById('round1Slots').innerHTML = slots;
+  document.querySelectorAll('#round1Slots tr').forEach(updateSlotPreview);
+  document.querySelectorAll('.slotTeam,.slotPair').forEach(el => el.addEventListener('change', e => updateSlotPreview(e.target.closest('tr'))));
+}
+function updateSlotPreview(row) {
+  const teamId = row.querySelector('.slotTeam').value;
+  const pairIndex = Number(row.querySelector('.slotPair').value);
+  row.querySelector('.slotPreview').textContent = pairText(teamId, pairIndex, 'round1');
+}
+function renderFinalSelectors() {
+  const matches = JR.getFinalMatches(data);
+  document.getElementById('finalMatchSelect').innerHTML = matches.map(m => `<option value="${m.key}">${m.title}：${JR.escapeHtml(m.leftTeam?.name || '-')} VS ${JR.escapeHtml(m.rightTeam?.name || '-')}</option>`).join('');
+  document.getElementById('finalPairSelect').innerHTML = Array.from({length:8}, (_, i)=>`<option value="${i}">ペア${i+1}</option>`).join('');
+  updateFinalPreview();
+}
+function updateFinalPreview() {
+  const match = JR.getFinalMatches(data).find(m => m.key === document.getElementById('finalMatchSelect').value);
+  const pairIndex = Number(document.getElementById('finalPairSelect').value || 0);
+  const leftPair = JR.getPair(data, match?.leftTeamId, 'final', pairIndex);
+  const rightPair = JR.getPair(data, match?.rightTeamId, 'final', pairIndex);
+  document.getElementById('finalPreview').innerHTML = `<div><span>${JR.escapeHtml(match?.leftRank || '')}</span><strong>${JR.escapeHtml(match?.leftTeam?.name || '-')}</strong><small>${JR.escapeHtml(leftPair.label)}</small></div><b>VS</b><div><span>${JR.escapeHtml(match?.rightRank || '')}</span><strong>${JR.escapeHtml(match?.rightTeam?.name || '-')}</strong><small>${JR.escapeHtml(rightPair.label)}</small></div>`;
+}
+function toggleMode() {
+  const mode = document.getElementById('modeSelect').value;
+  document.getElementById('round1Setup').hidden = mode !== 'round1';
+  document.getElementById('finalSetup').hidden = mode !== 'final';
+}
+document.addEventListener('DOMContentLoaded', () => {
+  data = JR.loadData();
+  JR.onDataChanged(next => { data = next; renderCurrent(); renderRound1Slots(); renderFinalSelectors(); });
+  renderCurrent();
+  renderRound1Slots();
+  renderFinalSelectors();
+  toggleMode();
+  document.getElementById('modeSelect').addEventListener('change', toggleMode);
+  document.getElementById('finalMatchSelect').addEventListener('change', updateFinalPreview);
+  document.getElementById('finalPairSelect').addEventListener('change', updateFinalPreview);
+  document.getElementById('saveDevice').addEventListener('click', () => {
+    const mode = document.getElementById('modeSelect').value;
+    const inputterName = document.getElementById('inputterName').value.trim();
+    if (mode === 'round1') {
+      const assignments = Array.from(document.querySelectorAll('#round1Slots tr')).map(row => ({ teamId: row.querySelector('.slotTeam').value, pairIndex: Number(row.querySelector('.slotPair').value) }));
+      if (assignments.length !== 2) return alert('入力対象ペアを2枠指定してください。');
+      JR.setDeviceAssignment({ mode, inputterName, round1Assignments: assignments });
+    } else {
+      JR.setDeviceAssignment({ mode, inputterName, matchKey: document.getElementById('finalMatchSelect').value, pairIndex: Number(document.getElementById('finalPairSelect').value) });
+    }
+    JR.toast('この端末を固定しました');
+    renderCurrent();
+  });
+  document.getElementById('unlockDevice').addEventListener('click', () => {
+    const pw = prompt('本部解除PWを入力してください。');
+    if (pw !== '000000') return alert('解除PWが違います。');
+    JR.clearDeviceAssignment();
+    JR.toast('端末固定を解除しました');
+    renderCurrent();
+  });
+});
+</script>
+</body>
+</html>

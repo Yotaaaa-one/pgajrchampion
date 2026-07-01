@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 実機テスト用の緩いルールです。本番では必ず制限してください。
+    match /junior_tournaments/{tournamentId} {
+      allow read, write: if true;
+    }
+  }
+}

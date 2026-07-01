@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<title>PGAジュニア チーム戦スコア速報ターミナル</title>
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="styles.css">
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script defer src="firebase-config.js"></script>
+<script src="app.js" defer></script>
+
+</head>
+<body>
+<header class="hero">
+  <p class="eyebrow">Jr Team Score v2.0 / Firebase Ready</p>
+  <h1 data-app-title>PGAジュニア チーム戦スコア速報ターミナル</h1>
+  <p>1日目・2日目とも18ホールスコア入力。2日目の順位決定戦ポイントは自動計算します。Firebase接続に対応した静的HTML版です。firebase-config.js未設定時はローカル保存で動きます。</p>
+</header>
+
+<nav class="top-nav">
+  <a href="index.html">トップ</a>
+  <a href="setup.html">設定</a>
+  <a href="round1.html">1日目入力</a>
+  <a href="round1_result.html">1R成績表</a>
+  <a href="final.html">順位決定戦入力</a>
+  <a href="final_result.html">順位決定戦表</a>
+  <a href="device_setup.html">端末設定</a>
+  <a href="scorer.html">スコアラー端末</a>
+  <a href="hq_status.html">本部状況</a>
+</nav>
+<div class="sync-strip"><span data-sync-status>同期状態確認中</span><span>最終更新：<b data-updated-at>-</b></span></div>
+
+
+<main class="container">
+  <section class="grid two">
+    <article class="card">
+      <h2>運用フロー</h2>
+      <ol class="steps">
+        <li><strong>設定</strong><span>大会情報、チーム、選手、1日目/2日目ペアを登録。</span></li>
+        <li><strong>1日目入力</strong><span>各チーム8ペアの18Hストロークを入力。</span></li>
+        <li><strong>1R成績表</strong><span>A/Bブロック順位とGRAND TOTALを確認。</span></li>
+        <li><strong>順位決定戦入力</strong><span>ブロック順位に基づき、左右チームの18Hスコアのみ入力。</span></li>
+        <li><strong>順位決定戦表</strong><span>自動計算ポイント、Totalストローク、最終順位を表示。</span></li>
+      </ol>
+    </article>
+    <article class="card status-card">
+      <h2>現在の状態</h2>
+      <div id="summary"></div>
+      <p class="muted">最終更新：<span data-updated-at>-</span></p>
+      <div class="button-row">
+        <button class="secondary" id="exportJson">データを保存(JSON)</button>
+        <label class="button secondary file-label">JSON読込<input type="file" id="importJson" accept="application/json"></label>
+        <button class="danger" id="resetData">初期化</button>
+      </div>
+    </article>
+  </section>
+
+  <section class="card">
+    <h2>v2.0の範囲</h2>
+    <div class="feature-list">
+      <span>8地区チーム固定</span><span>A/Bブロック</span><span>各チーム16名</span><span>1日目8ペア</span><span>2日目ペア変更対応</span><span>18Hストローク入力</span><span>2日目ポイント自動計算</span><span>CSV出力</span><span>Firebase対応</span><span>リアルタイム同期</span><span>スコアラー端末</span><span>1ホールごと入力</span><span>端末固定</span><span>本部状況確認</span>
+    </div>
+  </section>
+</main>
+<script>
+function renderDashboard() {
+  const data = JR.loadData();
+  const summary = document.getElementById('summary');
+  const a = JR.rankTeamsInBlock(data, 'A');
+  const b = JR.rankTeamsInBlock(data, 'B');
+  summary.innerHTML = `
+    <div class="mini-ranks">
+      <div><h3>Aブロック</h3>${a.map(r => `<p>${r.rank}位　${JR.escapeHtml(r.team.name)} <strong>${JR.formatNum(r.total)}</strong> <small>${r.progress}/144H</small></p>`).join('')}</div>
+      <div><h3>Bブロック</h3>${b.map(r => `<p>${r.rank}位　${JR.escapeHtml(r.team.name)} <strong>${JR.formatNum(r.total)}</strong> <small>${r.progress}/144H</small></p>`).join('')}</div>
+    </div>`;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderDashboard();
+  JR.onDataChanged(() => renderDashboard());
+  document.getElementById('exportJson').addEventListener('click', () => {
+    JR.downloadText('jr_team_score_data.json', JSON.stringify(JR.loadData(), null, 2), 'application/json');
+  });
+  document.getElementById('importJson').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      JR.importData(await file.text());
+      JR.toast('JSONを読み込みました');
+      location.reload();
+    } catch (err) {
+      alert('JSONを読み込めませんでした。');
+    }
+  });
+  document.getElementById('resetData').addEventListener('click', () => {
+    if (confirm('全データを初期化します。よろしいですか？')) {
+      JR.resetData();
+      location.reload();
+    }
+  });
+});
+</script>
+</body>
+</html>

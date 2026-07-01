@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<title>1日目入力 | Jr Team Score</title>
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="styles.css">
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script defer src="firebase-config.js"></script>
+<script src="app.js" defer></script>
+
+</head>
+<body>
+<header class="page-header">
+  <p class="eyebrow">Day 1 Stroke Play</p>
+  <h1>1日目 ストローク入力</h1>
+  <p>各チーム8ペアの18ホールスコアを入力します。OUT/IN/TOTALは自動計算です。</p>
+</header>
+
+<nav class="top-nav">
+  <a href="index.html">トップ</a>
+  <a href="setup.html">設定</a>
+  <a href="round1.html">1日目入力</a>
+  <a href="round1_result.html">1R成績表</a>
+  <a href="final.html">順位決定戦入力</a>
+  <a href="final_result.html">順位決定戦表</a>
+  <a href="device_setup.html">端末設定</a>
+  <a href="scorer.html">スコアラー端末</a>
+  <a href="hq_status.html">本部状況</a>
+</nav>
+<div class="sync-strip"><span data-sync-status>同期状態確認中</span><span>最終更新：<b data-updated-at>-</b></span></div>
+
+
+<main class="container">
+  <section class="card">
+    <div class="form-grid slim">
+      <label>チーム<select id="teamSelect"></select></label>
+      <label>ペア<select id="pairSelect"></select></label>
+    </div>
+    <div id="pairInfo" class="info-strip"></div>
+  </section>
+  <section class="card">
+    <h2>スコア入力</h2>
+    <div class="table-scroll">
+      <table class="score-table input-table day1-input-table">
+        <thead id="scoreHeader"></thead>
+        <tbody>
+          <tr id="parLine"><th>PAR</th></tr>
+          <tr id="scoreLine"><th>Score</th></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="button-row"><button id="saveScore">保存</button><button class="secondary" id="clearScore">このペアをクリア</button></div>
+  </section>
+  <section class="card">
+    <h2>チーム入力状況</h2>
+    <div id="teamProgress"></div>
+  </section>
+</main>
+<script>
+let data;
+function render() {
+  data = JR.loadData();
+  renderSelectors();
+  renderInput();
+  renderProgress();
+}
+function renderSelectors() {
+  const teamSelect = document.getElementById('teamSelect');
+  const pairSelect = document.getElementById('pairSelect');
+  const currentTeam = teamSelect.value || data.teams[0].id;
+  const currentPair = pairSelect.value || '0';
+  teamSelect.innerHTML = data.teams.map(t => `<option value="${t.id}">${JR.escapeHtml(t.name)}（${t.block}）</option>`).join('');
+  teamSelect.value = data.teams.find(t => t.id === currentTeam) ? currentTeam : data.teams[0].id;
+  pairSelect.innerHTML = Array.from({length:8}, (_, i) => `<option value="${i}">ペア${i+1}</option>`).join('');
+  pairSelect.value = currentPair;
+}
+function totalsHtml(scores) {
+  return `<td class="total-cell">${JR.formatNum(JR.sumScores(scores,0,9))}</td><td class="total-cell">${JR.formatNum(JR.sumScores(scores,9,18))}</td><td class="grand-cell">${JR.formatNum(JR.sumScores(scores))}</td>`;
+}
+function renderInput() {
+  const teamId = document.getElementById('teamSelect').value;
+  const pairIndex = Number(document.getElementById('pairSelect').value);
+  const team = JR.getTeam(data, teamId);
+  const pair = JR.getPair(data, teamId, 'round1', pairIndex);
+  const scores = JR.getRound1Scores(data, teamId, pairIndex);
+  document.getElementById('pairInfo').innerHTML = `<strong>${JR.escapeHtml(team.name)} ペア${pairIndex+1}</strong><span>${JR.escapeHtml(pair.label)}</span><small>${JR.escapeHtml(pair.schools || '学校名未登録')}</small>`;
+  document.getElementById('scoreHeader').innerHTML = `<tr><th class="sticky-label">HOLE</th>${JR.holeHeaders()}<th>OUT</th><th>IN</th><th>18H TOTAL</th></tr>`;
+  document.getElementById('parLine').innerHTML = `<th class="sticky-label">PAR</th>${data.meta.parByHole.map(p=>`<td>${p}</td>`).join('')}<td>36</td><td>35</td><td>71</td>`;
+  document.getElementById('scoreLine').innerHTML = `<th class="sticky-label">Score</th>${JR.scoreInputs(scores, 'r1')}${totalsHtml(scores)}`;
+  document.querySelectorAll('.score-input').forEach(input => input.addEventListener('input', updateTotals));
+}
+function updateTotals() {
+  const scores = JR.readScoreInputs('r1');
+  const cells = document.querySelectorAll('#scoreLine td.total-cell, #scoreLine td.grand-cell');
+  const html = totalsHtml(scores);
+  const temp = document.createElement('tr'); temp.innerHTML = html;
+  cells.forEach((cell, i) => cell.textContent = temp.children[i].textContent);
+}
+function renderProgress() {
+  const teamId = document.getElementById('teamSelect').value;
+  const rows = Array.from({length:8}, (_, i) => {
+    const pair = JR.getPair(data, teamId, 'round1', i);
+    const s = JR.getRound1Scores(data, teamId, i);
+    return `<tr><th>${i+1}</th><td>${JR.escapeHtml(pair.label)}</td><td>${JR.completedHoles(s)}/18</td><td>${JR.formatNum(JR.sumScores(s,0,9))}</td><td>${JR.formatNum(JR.sumScores(s,9,18))}</td><td>${JR.formatNum(JR.sumScores(s))}</td></tr>`;
+  }).join('');
+  document.getElementById('teamProgress').innerHTML = `<div class="table-scroll"><table><thead><tr><th>ペア</th><th>選手</th><th>入力</th><th>OUT</th><th>IN</th><th>TOTAL</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><th colspan="5">GRAND TOTAL</th><th>${JR.formatNum(JR.teamGrandTotal(data, teamId))}</th></tr></tfoot></table></div>`;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  render();
+  JR.onDataChanged(() => render());
+  document.getElementById('teamSelect').addEventListener('change', () => { renderInput(); renderProgress(); });
+  document.getElementById('pairSelect').addEventListener('change', renderInput);
+  document.getElementById('saveScore').addEventListener('click', () => {
+    JR.setRound1Scores(data, document.getElementById('teamSelect').value, Number(document.getElementById('pairSelect').value), JR.readScoreInputs('r1'));
+    JR.saveData(data);
+    JR.toast('保存しました');
+    renderProgress();
+  });
+  document.getElementById('clearScore').addEventListener('click', () => {
+    if (!confirm('このペアのスコアをクリアしますか？')) return;
+    JR.setRound1Scores(data, document.getElementById('teamSelect').value, Number(document.getElementById('pairSelect').value), Array(18).fill(null));
+    JR.saveData(data);
+    renderInput(); renderProgress();
+  });
+});
+</script>
+</body>
+</html>

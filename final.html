@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<title>順位決定戦入力 | Jr Team Score</title>
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="styles.css">
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script defer src="firebase-config.js"></script>
+<script src="app.js" defer></script>
+
+</head>
+<body>
+<header class="page-header">
+  <p class="eyebrow">Day 2 Stroke Input</p>
+  <h1>順位決定戦 スコア入力</h1>
+  <p>ポイントは入力しません。左右チームの18ホールスコアだけを入力し、勝ち3pt・分け1pt・負け0ptは自動計算します。</p>
+</header>
+
+<nav class="top-nav">
+  <a href="index.html">トップ</a>
+  <a href="setup.html">設定</a>
+  <a href="round1.html">1日目入力</a>
+  <a href="round1_result.html">1R成績表</a>
+  <a href="final.html">順位決定戦入力</a>
+  <a href="final_result.html">順位決定戦表</a>
+  <a href="device_setup.html">端末設定</a>
+  <a href="scorer.html">スコアラー端末</a>
+  <a href="hq_status.html">本部状況</a>
+</nav>
+<div class="sync-strip"><span data-sync-status>同期状態確認中</span><span>最終更新：<b data-updated-at>-</b></span></div>
+
+
+<main class="container wide">
+  <section class="card">
+    <div class="form-grid slim">
+      <label>対戦<select id="matchSelect"></select></label>
+      <label>ペア<select id="pairSelect"></select></label>
+    </div>
+    <div id="matchInfo" class="versus-card"></div>
+    <p class="muted input-note">入力するのは各ホールのストロークのみです。ポイント欄は自動表示のため編集できません。</p>
+  </section>
+
+  <section class="card">
+    <h2>18ホールスコア入力</h2>
+    <div class="table-scroll">
+      <table class="score-table final-input-table day2-score-only-table">
+        <thead id="scoreHeader"></thead>
+        <tbody id="inputBody"></tbody>
+      </table>
+    </div>
+    <div class="button-row"><button id="saveScore">保存</button><button class="secondary" id="clearScore">このペアをクリア</button></div>
+  </section>
+
+  <section class="card">
+    <h2>自動計算サマリー</h2>
+    <div id="matchSummary"></div>
+  </section>
+</main>
+<script>
+let data;
+function selectedMatch() {
+  return JR.getFinalMatches(data).find(m => m.key === document.getElementById('matchSelect').value);
+}
+function renderSelectors() {
+  const matchSelect = document.getElementById('matchSelect');
+  const pairSelect = document.getElementById('pairSelect');
+  const currentMatch = matchSelect.value;
+  const currentPair = pairSelect.value || '0';
+  const matches = JR.getFinalMatches(data);
+  matchSelect.innerHTML = matches.map(m => `<option value="${m.key}">${m.title}：${JR.escapeHtml(m.leftTeam?.name || '-')} VS ${JR.escapeHtml(m.rightTeam?.name || '-')}</option>`).join('');
+  matchSelect.value = matches.find(m => m.key === currentMatch) ? currentMatch : matches[0].key;
+  pairSelect.innerHTML = Array.from({length:8}, (_, i) => `<option value="${i}">ペア${i+1}</option>`).join('');
+  pairSelect.value = currentPair;
+}
+function totalsCells(scores, pts) {
+  return `<td class="total-cell">${JR.formatNum(JR.sumScores(scores,0,9))}</td><td class="total-cell">${JR.formatNum(JR.sumScores(scores,9,18))}</td><td class="grand-cell">${JR.formatNum(JR.sumScores(scores))}</td><td class="point-cell">${JR.sumPoints(pts)}</td>`;
+}
+function renderInput() {
+  const match = selectedMatch();
+  const pairIndex = Number(document.getElementById('pairSelect').value);
+  const leftPair = JR.getPair(data, match.leftTeamId, 'final', pairIndex);
+  const rightPair = JR.getPair(data, match.rightTeamId, 'final', pairIndex);
+  const leftScores = JR.getFinalScores(data, match.key, match.leftTeamId, pairIndex);
+  const rightScores = JR.getFinalScores(data, match.key, match.rightTeamId, pairIndex);
+  const pts = JR.pointsForScores(leftScores, rightScores);
+  document.getElementById('matchInfo').innerHTML = `<div><span>${match.leftRank}</span><strong>${JR.escapeHtml(match.leftTeam?.name || '-')}</strong><small>${JR.escapeHtml(leftPair.label)}</small></div><b>VS</b><div><span>${match.rightRank}</span><strong>${JR.escapeHtml(match.rightTeam?.name || '-')}</strong><small>${JR.escapeHtml(rightPair.label)}</small></div>`;
+  document.getElementById('scoreHeader').innerHTML = `<tr><th class="sticky-label">HOLE</th>${JR.holeHeaders()}<th>OUT</th><th>IN</th><th>18H TOTAL</th><th>pt<br><small>自動</small></th></tr>`;
+  document.getElementById('inputBody').innerHTML = `
+    <tr><th class="sticky-label">PAR</th>${data.meta.parByHole.map(p=>`<td>${p}</td>`).join('')}<td>36</td><td>35</td><td>71</td><td></td></tr>
+    <tr><th class="sticky-label">${JR.escapeHtml(match.leftTeam?.name || '左')}<br><small>Score</small></th>${JR.scoreInputs(leftScores, 'left')}${totalsCells(leftScores, pts.leftPts)}</tr>
+    <tr class="point-row auto-point-row"><th class="sticky-label">pt<br><small>自動</small></th>${pts.leftPts.map(v=>`<td>${v ?? ''}</td>`).join('')}<td colspan="4"></td></tr>
+    <tr><th class="sticky-label">${JR.escapeHtml(match.rightTeam?.name || '右')}<br><small>Score</small></th>${JR.scoreInputs(rightScores, 'right')}${totalsCells(rightScores, pts.rightPts)}</tr>
+    <tr class="point-row auto-point-row"><th class="sticky-label">pt<br><small>自動</small></th>${pts.rightPts.map(v=>`<td>${v ?? ''}</td>`).join('')}<td colspan="4"></td></tr>`;
+  document.querySelectorAll('.score-input').forEach(input => input.addEventListener('input', refreshPointRows));
+}
+function refreshPointRows() {
+  const l = JR.readScoreInputs('left');
+  const r = JR.readScoreInputs('right');
+  const pts = JR.pointsForScores(l, r);
+  const body = document.getElementById('inputBody');
+  const match = selectedMatch();
+  body.children[1].innerHTML = `<th class="sticky-label">${JR.escapeHtml(match.leftTeam?.name || '左')}<br><small>Score</small></th>${JR.scoreInputs(l, 'left')}${totalsCells(l, pts.leftPts)}`;
+  body.children[2].innerHTML = `<th class="sticky-label">pt<br><small>自動</small></th>${pts.leftPts.map(v=>`<td>${v ?? ''}</td>`).join('')}<td colspan="4"></td>`;
+  body.children[3].innerHTML = `<th class="sticky-label">${JR.escapeHtml(match.rightTeam?.name || '右')}<br><small>Score</small></th>${JR.scoreInputs(r, 'right')}${totalsCells(r, pts.rightPts)}`;
+  body.children[4].innerHTML = `<th class="sticky-label">pt<br><small>自動</small></th>${pts.rightPts.map(v=>`<td>${v ?? ''}</td>`).join('')}<td colspan="4"></td>`;
+  document.querySelectorAll('.score-input').forEach(input => input.addEventListener('input', refreshPointRows));
+  renderSummary();
+}
+function renderSummary() {
+  const match = selectedMatch();
+  const calc = JR.calcFinalMatch(data, match);
+  const rows = calc.rows.map(r => `<tr><th>${r.pairIndex+1}</th><td>${JR.escapeHtml(r.leftPair.label)}</td><td>${r.leftPointTotal}</td><td>${r.rightPointTotal}</td><td>${JR.escapeHtml(r.rightPair.label)}</td></tr>`).join('');
+  const resultText = calc.result.status === 'win' ? `${calc.result.winner.name} 勝利（${calc.result.method}）` : (calc.result.message || '未確定');
+  document.getElementById('matchSummary').innerHTML = `<div class="scoreboard"><div><strong>${JR.escapeHtml(match.leftTeam?.name || '-')}</strong><b>${calc.leftPoints}</b><small>pt / Totalストローク ${JR.formatNum(calc.leftStroke)}</small></div><span>自動計算</span><div><strong>${JR.escapeHtml(match.rightTeam?.name || '-')}</strong><b>${calc.rightPoints}</b><small>pt / Totalストローク ${JR.formatNum(calc.rightStroke)}</small></div></div><p class="decision">${JR.escapeHtml(resultText)}</p><div class="table-scroll"><table><thead><tr><th>ペア</th><th>左</th><th>pt</th><th>pt</th><th>右</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function render() {
+  data = JR.loadData();
+  renderSelectors();
+  renderInput();
+  renderSummary();
+}
+document.addEventListener('DOMContentLoaded', () => {
+  render();
+  JR.onDataChanged(() => render());
+  document.getElementById('matchSelect').addEventListener('change', () => { renderInput(); renderSummary(); });
+  document.getElementById('pairSelect').addEventListener('change', () => { renderInput(); renderSummary(); });
+  document.getElementById('saveScore').addEventListener('click', () => {
+    const match = selectedMatch();
+    const pairIndex = Number(document.getElementById('pairSelect').value);
+    JR.setFinalScores(data, match.key, match.leftTeamId, pairIndex, JR.readScoreInputs('left'));
+    JR.setFinalScores(data, match.key, match.rightTeamId, pairIndex, JR.readScoreInputs('right'));
+    JR.saveData(data);
+    JR.toast('スコアを保存しました。ポイントは自動計算です。');
+    renderSummary();
+  });
+  document.getElementById('clearScore').addEventListener('click', () => {
+    if (!confirm('このペアの順位決定戦スコアをクリアしますか？')) return;
+    const match = selectedMatch();
+    const pairIndex = Number(document.getElementById('pairSelect').value);
+    JR.setFinalScores(data, match.key, match.leftTeamId, pairIndex, Array(18).fill(null));
+    JR.setFinalScores(data, match.key, match.rightTeamId, pairIndex, Array(18).fill(null));
+    JR.saveData(data); renderInput(); renderSummary();
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+Firebase実機テスト手順
+
+1. Firebase Consoleで新規プロジェクトを作成
+2. Firestore Databaseを作成
+3. Webアプリを追加
+4. Firebase configをコピー
+5. firebase-config.js に貼り付け
+6. enabled: true に変更
+7. GitHub Pages または Firebase Hosting にアップ
+8. iPhone複数台で同じURLを開く
+9. device_setup.html で端末をそれぞれ別の組に固定
+10. scorer.html で入力し、hq_status.html と成績表に反映されるか確認
+
+保存先：
+junior_tournaments / junior2026
+
+大会IDを変える場合：
+firebase-config.js の window.JR_TOURNAMENT_ID を変更してください。

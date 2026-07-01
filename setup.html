@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<title>設定 | Jr Team Score</title>
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="styles.css">
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script defer src="firebase-config.js"></script>
+<script src="app.js" defer></script>
+
+</head>
+<body>
+<header class="page-header">
+  <p class="eyebrow">Headquarters</p>
+  <h1>本部設定</h1>
+  <p>大会情報、チーム、選手、ペアをここで整えます。ここが司令塔です。</p>
+</header>
+
+<nav class="top-nav">
+  <a href="index.html">トップ</a>
+  <a href="setup.html">設定</a>
+  <a href="round1.html">1日目入力</a>
+  <a href="round1_result.html">1R成績表</a>
+  <a href="final.html">順位決定戦入力</a>
+  <a href="final_result.html">順位決定戦表</a>
+  <a href="device_setup.html">端末設定</a>
+  <a href="scorer.html">スコアラー端末</a>
+  <a href="hq_status.html">本部状況</a>
+</nav>
+<div class="sync-strip"><span data-sync-status>同期状態確認中</span><span>最終更新：<b data-updated-at>-</b></span></div>
+
+
+<main class="container">
+  <section class="card">
+    <h2>大会基本設定</h2>
+    <div class="form-grid" id="metaForm"></div>
+    <h3>PAR設定</h3>
+    <div class="table-scroll compact">
+      <table class="score-table"><thead><tr><th>HOLE</th>${Array.from({length:18},(_,i)=>`<th>${i+1}</th>`).join('')}</tr></thead><tbody><tr id="parRow"><th>PAR</th></tr></tbody></table>
+    </div>
+    <div class="button-row"><button id="saveMeta">大会設定を保存</button></div>
+  </section>
+
+  <section class="grid two">
+    <article class="card">
+      <h2>チーム一覧</h2>
+      <div id="teamList"></div>
+    </article>
+    <article class="card">
+      <h2>選手・ペア設定</h2>
+      <label>編集チーム<select id="teamSelect"></select></label>
+      <div id="teamEditor"></div>
+    </article>
+  </section>
+</main>
+<script>
+let data;
+function render() {
+  data = JR.loadData();
+  renderMeta();
+  renderTeams();
+  renderTeamSelect();
+  renderTeamEditor();
+}
+function renderMeta() {
+  const m = data.meta;
+  document.getElementById('metaForm').innerHTML = `
+    <label>システム名<input id="meta_title" value="${JR.escapeHtml(m.title)}"></label>
+    <label>競技名称<input id="meta_competitionName" value="${JR.escapeHtml(m.competitionName)}"></label>
+    <label>会場<input id="meta_venue" value="${JR.escapeHtml(m.venue)}"></label>
+    <label>1日目<input id="meta_date1" type="date" value="${JR.escapeHtml(m.date1)}"></label>
+    <label>2日目<input id="meta_date2" type="date" value="${JR.escapeHtml(m.date2)}"></label>
+    <label>メモ<input id="meta_note" value="${JR.escapeHtml(m.note)}"></label>`;
+  document.getElementById('parRow').innerHTML = '<th>PAR</th>' + m.parByHole.map((p,i)=>`<td><input class="mini-input" id="par_${i}" inputmode="numeric" value="${p}"></td>`).join('');
+}
+function renderTeams() {
+  const html = data.teams.map(t => `
+    <div class="team-line">
+      <span class="badge block-${t.block}">${t.block}</span>
+      <strong>${JR.escapeHtml(t.name)}</strong>
+      <small>${JR.escapeHtml(t.color || '')}</small>
+    </div>`).join('');
+  document.getElementById('teamList').innerHTML = html;
+}
+function renderTeamSelect() {
+  const select = document.getElementById('teamSelect');
+  const current = select.value || data.teams[0].id;
+  select.innerHTML = data.teams.map(t => `<option value="${t.id}">${JR.escapeHtml(t.name)}</option>`).join('');
+  select.value = data.teams.find(t => t.id === current) ? current : data.teams[0].id;
+}
+function playerOptions(team, selected) {
+  return team.players.map((p, i) => `<option value="${i}" ${Number(selected)===i?'selected':''}>${i+1}：${JR.escapeHtml(p.name)}</option>`).join('');
+}
+function pairTable(team, day, title) {
+  const pairs = data.pairings[day][team.id];
+  return `<h3>${title}</h3><div class="table-scroll"><table><thead><tr><th>ペア</th><th>1人目</th><th>2人目</th></tr></thead><tbody>
+  ${pairs.map((pair, i) => `<tr><th>${i+1}</th><td><select data-pair="${day}_${i}_0">${playerOptions(team, pair[0])}</select></td><td><select data-pair="${day}_${i}_1">${playerOptions(team, pair[1])}</select></td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+function renderTeamEditor() {
+  const team = JR.getTeam(data, document.getElementById('teamSelect').value) || data.teams[0];
+  document.getElementById('teamEditor').innerHTML = `
+    <div class="form-grid">
+      <label>地区名<input id="team_name" value="${JR.escapeHtml(team.name)}"></label>
+      <label>ブロック<select id="team_block"><option value="A" ${team.block==='A'?'selected':''}>A</option><option value="B" ${team.block==='B'?'selected':''}>B</option></select></label>
+      <label>表示色<input id="team_color" value="${JR.escapeHtml(team.color || '')}"></label>
+    </div>
+    <h3>選手16名</h3>
+    <div class="table-scroll"><table><thead><tr><th>No.</th><th>氏名</th><th>学校名</th><th>区分</th><th>カテゴリ</th></tr></thead><tbody>
+      ${team.players.map((p, i) => `<tr><th>${i+1}</th><td><input data-player-name="${i}" value="${JR.escapeHtml(p.name)}"></td><td><input data-player-school="${i}" value="${JR.escapeHtml(p.school)}"></td><td><select data-player-gender="${i}"><option ${p.gender==='女子'?'selected':''}>女子</option><option ${p.gender==='男子'?'selected':''}>男子</option></select></td><td><input data-player-category="${i}" value="${JR.escapeHtml(p.category)}"></td></tr>`).join('')}
+    </tbody></table></div>
+    ${pairTable(team, 'round1', '1日目ペア')}
+    ${pairTable(team, 'final', '2日目ペア')}
+    <div class="button-row"><button id="saveTeam">このチームを保存</button><button class="secondary" id="copyPairs">1日目ペアを2日目へコピー</button></div>`;
+  document.getElementById('saveTeam').addEventListener('click', () => saveTeam(team.id));
+  document.getElementById('copyPairs').addEventListener('click', () => {
+    data.pairings.final[team.id] = JSON.parse(JSON.stringify(data.pairings.round1[team.id]));
+    JR.saveData(data);
+    JR.toast('2日目ペアへコピーしました');
+    renderTeamEditor();
+  });
+}
+function saveTeam(teamId) {
+  const team = JR.getTeam(data, teamId);
+  team.name = document.getElementById('team_name').value.trim() || team.name;
+  team.block = document.getElementById('team_block').value;
+  team.color = document.getElementById('team_color').value.trim();
+  team.players.forEach((p, i) => {
+    p.name = document.querySelector(`[data-player-name="${i}"]`).value.trim() || `${team.name}${i+1}`;
+    p.school = document.querySelector(`[data-player-school="${i}"]`).value.trim();
+    p.gender = document.querySelector(`[data-player-gender="${i}"]`).value;
+    p.category = document.querySelector(`[data-player-category="${i}"]`).value.trim();
+  });
+  ['round1','final'].forEach(day => {
+    data.pairings[day][team.id] = Array.from({length:8}, (_, i) => [
+      Number(document.querySelector(`[data-pair="${day}_${i}_0"]`).value),
+      Number(document.querySelector(`[data-pair="${day}_${i}_1"]`).value)
+    ]);
+  });
+  JR.saveData(data);
+  JR.toast('保存しました');
+  render();
+}
+document.addEventListener('DOMContentLoaded', () => {
+  render();
+  JR.onDataChanged(() => { data = JR.loadData(); render(); });
+  document.getElementById('teamSelect').addEventListener('change', renderTeamEditor);
+  document.getElementById('saveMeta').addEventListener('click', () => {
+    data.meta.title = document.getElementById('meta_title').value.trim();
+    data.meta.competitionName = document.getElementById('meta_competitionName').value.trim();
+    data.meta.venue = document.getElementById('meta_venue').value.trim();
+    data.meta.date1 = document.getElementById('meta_date1').value;
+    data.meta.date2 = document.getElementById('meta_date2').value;
+    data.meta.note = document.getElementById('meta_note').value.trim();
+    data.meta.parByHole = Array.from({length:18}, (_, i) => Number(document.getElementById(`par_${i}`).value) || JR.DEFAULT_PAR[i]);
+    JR.saveData(data);
+    JR.toast('大会設定を保存しました');
+  });
+});
+</script>
+</body>
+</html>

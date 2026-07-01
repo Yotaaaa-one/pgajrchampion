@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<title>順位決定戦表 | Jr Team Score</title>
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="styles.css">
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script defer src="firebase-config.js"></script>
+<script src="app.js" defer></script>
+
+</head>
+<body>
+<header class="page-header print-header">
+  <p class="eyebrow">Final Day Result</p>
+  <h1>順位決定戦</h1>
+  <p id="metaLine"></p>
+</header>
+
+<nav class="top-nav">
+  <a href="index.html">トップ</a>
+  <a href="setup.html">設定</a>
+  <a href="round1.html">1日目入力</a>
+  <a href="round1_result.html">1R成績表</a>
+  <a href="final.html">順位決定戦入力</a>
+  <a href="final_result.html">順位決定戦表</a>
+  <a href="device_setup.html">端末設定</a>
+  <a href="scorer.html">スコアラー端末</a>
+  <a href="hq_status.html">本部状況</a>
+</nav>
+<div class="sync-strip"><span data-sync-status>同期状態確認中</span><span>最終更新：<b data-updated-at>-</b></span></div>
+
+
+<main class="container wide">
+  <section class="button-row no-print">
+    <button id="exportCsv">順位決定戦CSV出力</button>
+    <button class="secondary" onclick="window.print()">印刷</button>
+  </section>
+  <section id="finalRanking" class="card final-ranking-card"></section>
+  <section id="matches" class="final-grid"></section>
+</main>
+<script>
+function scoreCells(scores) { return JR.normalizeScoreArray(scores).map(v=>`<td>${v ?? ''}</td>`).join(''); }
+function pointCells(points) { return points.map(v=>`<td class="pt-cell">${v ?? ''}</td>`).join(''); }
+function matchTable(data, match) {
+  const calc = JR.calcFinalMatch(data, match);
+  const resultText = calc.result.status === 'win' ? `${calc.result.winner.name} 勝利 / ${calc.result.method}` : (calc.result.message || '未確定');
+  const rows = calc.rows.map(r => `
+    <tr><th rowspan="2">${r.pairIndex+1}</th><td class="name-cell">${JR.escapeHtml(r.leftPair.label)}</td>${scoreCells(r.leftScores)}<td>${JR.formatNum(r.leftOut)}</td><td>${JR.formatNum(r.leftIn)}</td><td>${JR.formatNum(r.leftTotal)}</td><td class="pair-pt">${r.leftPointTotal}</td><td class="pair-pt">${r.rightPointTotal}</td><td>${JR.formatNum(r.rightTotal)}</td><td>${JR.formatNum(r.rightIn)}</td><td>${JR.formatNum(r.rightOut)}</td>${scoreCells(r.rightScores)}<td class="name-cell">${JR.escapeHtml(r.rightPair.label)}</td></tr>
+    <tr class="point-row"><td>pt</td>${pointCells(r.leftPts)}<td colspan="3"></td><td></td><td></td><td colspan="3"></td>${pointCells(r.rightPts)}<td>pt</td></tr>`).join('');
+  const headerHoles = Array.from({length:18},(_,i)=>`<th>${i+1}</th>`).join('');
+  return `<article class="final-match-card"><div class="match-title"><h2>${match.title}</h2><p><strong>${JR.escapeHtml(match.leftTeam?.name || '-')}</strong> <span>${calc.leftPoints} pt</span>　対　<span>${calc.rightPoints} pt</span> <strong>${JR.escapeHtml(match.rightTeam?.name || '-')}</strong></p><small>${JR.escapeHtml(resultText)} / Totalストローク：${JR.formatNum(calc.leftStroke)} - ${JR.formatNum(calc.rightStroke)}</small></div><div class="table-scroll"><table class="final-result-table"><thead><tr><th>ペア</th><th>${JR.escapeHtml(match.leftTeam?.name || '左')}</th>${headerHoles}<th>OUT</th><th>IN</th><th>TOTAL</th><th>pt</th><th>pt</th><th>TOTAL</th><th>IN</th><th>OUT</th>${headerHoles}<th>${JR.escapeHtml(match.rightTeam?.name || '右')}</th></tr></thead><tbody>${rows}</tbody></table></div></article>`;
+}
+function render() {
+  const data = JR.loadData();
+  document.getElementById('metaLine').textContent = `${data.meta.competitionName}　${data.meta.venue}`;
+  const ranking = JR.finalRanking(data);
+  document.getElementById('finalRanking').innerHTML = `<h2>最終順位</h2><div class="rank-grid">${ranking.map(r => `<div><span>${r.rank}</span><strong>${JR.escapeHtml(r.team?.name || '未確定')}</strong><small>${JR.escapeHtml(r.method)}</small></div>`).join('')}</div>`;
+  document.getElementById('matches').innerHTML = JR.getFinalMatches(data).map(m => matchTable(data, m)).join('');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  render();
+  JR.onDataChanged(() => render());
+  document.getElementById('exportCsv').addEventListener('click', () => JR.downloadText('final_result.csv', JR.buildFinalCSV(JR.loadData()), 'text/csv'));
+});
+</script>
+</body>
+</html>

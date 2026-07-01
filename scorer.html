@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<title>スコアラー端末 | Jr Team Score</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="styles.css">
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script defer src="firebase-config.js"></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="page-header scorer-header">
+  <p class="eyebrow">Scorer Device</p>
+  <h1>スコアラー端末</h1>
+  <p>この端末に割り当てられた組・マッチだけを入力します。入力は1ホールごと、確認は18ホール一覧で行います。</p>
+</header>
+
+<nav class="top-nav">
+  <a href="index.html">トップ</a>
+  <a href="setup.html">設定</a>
+  <a href="round1.html">1日目入力</a>
+  <a href="round1_result.html">1R成績表</a>
+  <a href="final.html">順位決定戦入力</a>
+  <a href="final_result.html">順位決定戦表</a>
+  <a href="device_setup.html">端末設定</a>
+  <a href="scorer.html">スコアラー端末</a>
+  <a href="hq_status.html">本部状況</a>
+</nav>
+<div class="sync-strip"><span data-sync-status>同期状態確認中</span><span>最終更新：<b data-updated-at>-</b></span></div>
+
+
+<main class="container scorer-container">
+  <section class="card" id="notConfigured" hidden>
+    <h2>端末が固定されていません</h2>
+    <p class="muted">本部で端末設定を行ってから、選手または担当者へ渡してください。</p>
+    <a class="button" href="device_setup.html">端末設定へ</a>
+  </section>
+
+  <section class="card" id="devicePanel" hidden>
+    <div class="device-topline">
+      <div>
+        <span class="badge" id="modeBadge"></span>
+        <h2 id="deviceTitle"></h2>
+        <p class="muted" id="deviceSub"></p>
+      </div>
+      <button class="secondary" id="unlockDevice">本部解除</button>
+    </div>
+    <label class="inputter-label">入力者名・確認者名<input id="inputterName" placeholder="例：3組 / 代表選手 / 競技委員"></label>
+  </section>
+
+  <section class="card" id="round1Panel" hidden>
+    <div class="hole-panel-head">
+      <div>
+        <h2>1日目 1ホール入力</h2>
+        <p class="muted">この組に割り当てられた2ペア分だけ入力します。</p>
+      </div>
+      <div class="hole-big-badge"><span id="round1HoleLabel">1H</span><small id="round1ParLabel">Par</small></div>
+    </div>
+
+    <div class="hole-nav" id="round1HoleNav"></div>
+
+    <div class="single-hole-card">
+      <div id="round1CurrentEntries" class="single-hole-entry-grid"></div>
+      <div class="button-row scorer-action-row">
+        <button class="secondary" id="round1Prev">前のホール</button>
+        <button id="saveRound1">このホールを保存</button>
+        <button class="secondary" id="round1Next">次のホール</button>
+      </div>
+    </div>
+
+    <div class="review-box">
+      <div class="review-head"><h3>18ホール一覧確認</h3><span id="round1ProgressText" class="muted"></span></div>
+      <div class="table-scroll">
+        <table class="score-table scorer-review-table" id="round1ReviewTable"></table>
+      </div>
+      <div class="button-row">
+        <button class="secondary" id="confirmRound1">全18H入力後、同伴確認済みにする</button>
+      </div>
+      <p class="muted">保存後、同伴ペア・相手チームに一覧を確認してもらい「同伴確認済み」にしてください。</p>
+    </div>
+  </section>
+
+  <section class="card" id="finalPanel" hidden>
+    <div class="hole-panel-head">
+      <div>
+        <h2>2日目 順位決定戦 1ホール入力</h2>
+        <p class="muted">左右チームのスコアだけ入力します。ポイントは自動計算です。</p>
+      </div>
+      <div class="hole-big-badge"><span id="finalHoleLabel">1H</span><small id="finalParLabel">Par</small></div>
+    </div>
+
+    <div id="finalMatchInfo" class="versus-card"></div>
+    <div class="hole-nav" id="finalHoleNav"></div>
+
+    <div class="single-hole-card final-single-hole-card">
+      <div id="finalCurrentEntries" class="single-hole-entry-grid two"></div>
+      <div id="finalPointPreview" class="point-preview"></div>
+      <div class="button-row scorer-action-row">
+        <button class="secondary" id="finalPrev">前のホール</button>
+        <button id="saveFinal">このホールを保存</button>
+        <button class="secondary" id="finalNext">次のホール</button>
+      </div>
+    </div>
+
+    <div class="review-box">
+      <div class="review-head"><h3>18ホール一覧確認</h3><span id="finalProgressText" class="muted"></span></div>
+      <div class="table-scroll">
+        <table class="score-table scorer-review-table final-review-table" id="finalReviewTable"></table>
+      </div>
+      <div class="button-row">
+        <button class="secondary" id="confirmFinal">全18H入力後、同伴確認済みにする</button>
+      </div>
+      <p class="muted">勝ち3pt、分け1pt、負け0ptは一覧表に自動表示されます。</p>
+    </div>
+  </section>
+</main>
+
+<script>
+let data, device;
+let currentHole = Number(localStorage.getItem('jrTeamScoreV1.currentHole') || 0);
+if (!Number.isFinite(currentHole) || currentHole < 0 || currentHole > 17) currentHole = 0;
+
+function setCurrentHole(holeIndex) {
+  currentHole = Math.max(0, Math.min(17, Number(holeIndex) || 0));
+  localStorage.setItem('jrTeamScoreV1.currentHole', String(currentHole));
+}
+function holeName() { return `${currentHole + 1}H`; }
+function currentPar() { return Number(data.meta.parByHole[currentHole]) || JR.DEFAULT_PAR[currentHole]; }
+function readSingleScore(id) { return JR.scoreValue(document.getElementById(id)?.value); }
+function scoreInput(id, value, label) {
+  return `<input class="big-score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="20" id="${id}" value="${value ?? ''}" aria-label="${JR.escapeHtml(label)}">`;
+}
+function statusPill(conf) {
+  const st = JR.confirmationStatus(conf);
+  return `<span class="status-pill ${st.className}">${st.label}</span>`;
+}
+function scoreClass(value) {
+  if (value === null || value === undefined) return 'empty-score';
+  const par = currentPar();
+  if (value < par) return 'under-score';
+  if (value > par) return 'over-score';
+  return 'even-score';
+}
+function totalsCells(scores) {
+  return `<td class="total-cell">${JR.formatNum(JR.sumScores(scores,0,9))}</td><td class="total-cell">${JR.formatNum(JR.sumScores(scores,9,18))}</td><td class="grand-cell">${JR.formatNum(JR.sumScores(scores))}</td>`;
+}
+function pointCells(pts) {
+  return `${pts.map(p=>`<td class="pt-cell">${p ?? '-'}</td>`).join('')}<td></td><td></td><td class="point-cell">${JR.sumPoints(pts)}</td>`;
+}
+function assignedCompleteRound1() {
+  return (device.round1Assignments || []).every(a => JR.isScoresComplete(JR.getRound1Scores(data, a.teamId, Number(a.pairIndex))));
+}
+function assignedCompleteFinal(match, pairIndex) {
+  if (!match) return false;
+  return JR.isScoresComplete(JR.getFinalScores(data, match.key, match.leftTeamId, pairIndex)) && JR.isScoresComplete(JR.getFinalScores(data, match.key, match.rightTeamId, pairIndex));
+}
+function renderBase() {
+  document.getElementById('notConfigured').hidden = !!device;
+  document.getElementById('devicePanel').hidden = !device;
+  if (!device) return;
+  document.getElementById('modeBadge').textContent = JR.deviceModeLabel(device.mode);
+  document.getElementById('inputterName').value = device.inputterName || '';
+}
+function renderHoleNav(targetId, completionByHole) {
+  document.getElementById(targetId).innerHTML = Array.from({length:18}, (_, i) => {
+    const cls = [i === currentHole ? 'current' : '', completionByHole(i)].filter(Boolean).join(' ');
+    return `<button class="hole-nav-button ${cls}" data-hole="${i}">${i+1}</button>`;
+  }).join('');
+  document.querySelectorAll(`#${targetId} .hole-nav-button`).forEach(btn => btn.addEventListener('click', () => {
+    saveCurrentHoleToMemory();
+    setCurrentHole(Number(btn.dataset.hole));
+    renderAll();
+  }));
+}
+function round1CompletionClass(i) {
+  const vals = (device.round1Assignments || []).map(a => JR.getRound1Scores(data, a.teamId, Number(a.pairIndex))[i]);
+  if (vals.length && vals.every(v => v !== null)) return 'done';
+  if (vals.some(v => v !== null)) return 'partial';
+  return '';
+}
+function finalCompletionClass(i) {
+  const match = JR.getFinalMatches(data).find(m => m.key === device.matchKey);
+  const pairIndex = Number(device.pairIndex || 0);
+  if (!match) return '';
+  const left = JR.getFinalScores(data, match.key, match.leftTeamId, pairIndex)[i];
+  const right = JR.getFinalScores(data, match.key, match.rightTeamId, pairIndex)[i];
+  if (left !== null && right !== null) return 'done';
+  if (left !== null || right !== null) return 'partial';
+  return '';
+}
+function renderRound1() {
+  const panel = document.getElementById('round1Panel');
+  panel.hidden = device?.mode !== 'round1';
+  if (panel.hidden) return;
+  document.getElementById('finalPanel').hidden = true;
+  document.getElementById('deviceTitle').textContent = '1日目 組端末';
+  document.getElementById('deviceSub').textContent = `${(device.round1Assignments || []).length}ペアをこの端末で入力`;
+  document.getElementById('round1HoleLabel').textContent = holeName();
+  document.getElementById('round1ParLabel').textContent = `Par ${currentPar()}`;
+  renderHoleNav('round1HoleNav', round1CompletionClass);
+  const entries = (device.round1Assignments || []).map((a, idx) => {
+    const team = JR.getTeam(data, a.teamId);
+    const pairIndex = Number(a.pairIndex);
+    const pair = JR.getPair(data, a.teamId, 'round1', pairIndex);
+    const scores = JR.getRound1Scores(data, a.teamId, pairIndex);
+    const value = scores[currentHole];
+    const conf = JR.getConfirmation(data, 'round1', a.teamId, String(pairIndex));
+    return `<div class="single-hole-entry ${scoreClass(value)}">
+      <div class="entry-title"><span>${JR.escapeHtml(team?.name || '-')} ペア${pairIndex + 1}</span>${statusPill(conf)}</div>
+      <p>${JR.escapeHtml(pair.label || '-')}</p>
+      <div class="score-line"><label>${holeName()} スコア${scoreInput(`r1_current_${idx}`, value, `${team?.name || ''} ${holeName()} スコア`)}</label></div>
+      <small>入力済み：${JR.completedHoles(scores)}/18　現在TOTAL：${JR.formatNum(JR.partialSum(scores))}</small>
+    </div>`;
+  }).join('');
+  document.getElementById('round1CurrentEntries').innerHTML = entries;
+  document.querySelectorAll('#round1CurrentEntries .big-score-input').forEach(input => input.addEventListener('input', updateRound1Live));
+  renderRound1Review();
+}
+function updateRound1Live() {
+  saveCurrentHoleToMemory();
+  renderHoleNav('round1HoleNav', round1CompletionClass);
+}
+function renderRound1Review() {
+  const head = `<thead><tr><th class="sticky-label">対象</th>${JR.holeHeaders()}<th>OUT</th><th>IN</th><th>18H TOTAL</th><th>状態</th></tr></thead>`;
+  const par = `<tr><th class="sticky-label">PAR</th>${data.meta.parByHole.map(p=>`<td>${p}</td>`).join('')}<td>36</td><td>35</td><td>71</td><td></td></tr>`;
+  const rows = (device.round1Assignments || []).map(a => {
+    const team = JR.getTeam(data, a.teamId);
+    const pairIndex = Number(a.pairIndex);
+    const pair = JR.getPair(data, a.teamId, 'round1', pairIndex);
+    const scores = JR.getRound1Scores(data, a.teamId, pairIndex);
+    const conf = JR.getConfirmation(data, 'round1', a.teamId, String(pairIndex));
+    return `<tr><th class="sticky-label team-pair-label">${JR.escapeHtml(team?.name || '-')} P${pairIndex+1}<br><small>${JR.escapeHtml(pair.label)}</small></th>${scores.map((v,i)=>`<td class="${i === currentHole ? 'current-hole-cell' : ''}">${v ?? '-'}</td>`).join('')}${totalsCells(scores)}<td>${statusPill(conf)}</td></tr>`;
+  }).join('');
+  document.getElementById('round1ReviewTable').innerHTML = `${head}<tbody>${par}${rows}</tbody>`;
+  const completed = (device.round1Assignments || []).reduce((sum, a) => sum + JR.completedHoles(JR.getRound1Scores(data, a.teamId, Number(a.pairIndex))), 0);
+  document.getElementById('round1ProgressText').textContent = `入力済み ${completed}/${(device.round1Assignments || []).length * 18}`;
+}
+function saveCurrentHoleToMemory() {
+  if (!device) return;
+  if (device.mode === 'round1') saveRound1CurrentToMemory();
+  if (device.mode === 'final') saveFinalCurrentToMemory();
+}
+function saveRound1CurrentToMemory() {
+  (device.round1Assignments || []).forEach((a, idx) => {
+    const scores = JR.getRound1Scores(data, a.teamId, Number(a.pairIndex));
+    scores[currentHole] = readSingleScore(`r1_current_${idx}`);
+    JR.setRound1Scores(data, a.teamId, Number(a.pairIndex), scores);
+  });
+}
+function saveRound1(confirmToo=false) {
+  saveRound1CurrentToMemory();
+  const inputterName = document.getElementById('inputterName').value.trim();
+  device.inputterName = inputterName;
+  JR.setDeviceAssignment(device);
+  if (confirmToo && !assignedCompleteRound1()) return alert('未入力ホールがあります。全18H入力後に同伴確認済みにしてください。');
+  (device.round1Assignments || []).forEach(a => {
+    JR.updateConfirmation(data, 'round1', a.teamId, String(Number(a.pairIndex)), Object.assign({ savedAt: new Date().toISOString(), inputterName }, confirmToo ? { companionConfirmed: true, companionConfirmedAt: new Date().toISOString() } : {}));
+  });
+  JR.saveData(data);
+  JR.toast(confirmToo ? '保存し、同伴確認済みにしました' : `${holeName()}を保存しました`);
+  renderAll();
+}
+function renderFinal() {
+  const panel = document.getElementById('finalPanel');
+  panel.hidden = device?.mode !== 'final';
+  if (panel.hidden) return;
+  document.getElementById('round1Panel').hidden = true;
+  const match = JR.getFinalMatches(data).find(m => m.key === device.matchKey);
+  const pairIndex = Number(device.pairIndex || 0);
+  document.getElementById('deviceTitle').textContent = `${match?.title || ''} ペア${pairIndex+1}`;
+  document.getElementById('deviceSub').textContent = `${match?.leftTeam?.name || '-'} VS ${match?.rightTeam?.name || '-'}`;
+  document.getElementById('finalHoleLabel').textContent = holeName();
+  document.getElementById('finalParLabel').textContent = `Par ${currentPar()}`;
+  if (!match) return;
+  const leftPair = JR.getPair(data, match.leftTeamId, 'final', pairIndex);
+  const rightPair = JR.getPair(data, match.rightTeamId, 'final', pairIndex);
+  document.getElementById('finalMatchInfo').innerHTML = `<div><span>${JR.escapeHtml(match.leftRank || '')}</span><strong>${JR.escapeHtml(match.leftTeam?.name || '-')}</strong><small>${JR.escapeHtml(leftPair.label)}</small></div><b>VS</b><div><span>${JR.escapeHtml(match.rightRank || '')}</span><strong>${JR.escapeHtml(match.rightTeam?.name || '-')}</strong><small>${JR.escapeHtml(rightPair.label)}</small></div>`;
+  renderHoleNav('finalHoleNav', finalCompletionClass);
+  const leftScores = JR.getFinalScores(data, match.key, match.leftTeamId, pairIndex);
+  const rightScores = JR.getFinalScores(data, match.key, match.rightTeamId, pairIndex);
+  const conf = JR.getConfirmation(data, 'final', match.key, String(pairIndex));
+  document.getElementById('finalCurrentEntries').innerHTML = `
+    <div class="single-hole-entry left-entry ${scoreClass(leftScores[currentHole])}">
+      <div class="entry-title"><span>${JR.escapeHtml(match.leftTeam?.name || '左')} ペア${pairIndex + 1}</span>${statusPill(conf)}</div>
+      <p>${JR.escapeHtml(leftPair.label || '-')}</p>
+      <div class="score-line"><label>${holeName()} スコア${scoreInput('left_current', leftScores[currentHole], '左チーム スコア')}</label></div>
+      <small>入力済み：${JR.completedHoles(leftScores)}/18　現在TOTAL：${JR.formatNum(JR.partialSum(leftScores))}</small>
+    </div>
+    <div class="single-hole-entry right-entry ${scoreClass(rightScores[currentHole])}">
+      <div class="entry-title"><span>${JR.escapeHtml(match.rightTeam?.name || '右')} ペア${pairIndex + 1}</span>${statusPill(conf)}</div>
+      <p>${JR.escapeHtml(rightPair.label || '-')}</p>
+      <div class="score-line"><label>${holeName()} スコア${scoreInput('right_current', rightScores[currentHole], '右チーム スコア')}</label></div>
+      <small>入力済み：${JR.completedHoles(rightScores)}/18　現在TOTAL：${JR.formatNum(JR.partialSum(rightScores))}</small>
+    </div>`;
+  document.querySelectorAll('#finalCurrentEntries .big-score-input').forEach(input => input.addEventListener('input', updateFinalLive));
+  renderFinalPointPreview();
+  renderFinalReview(match, pairIndex);
+}
+function renderFinalPointPreview() {
+  const left = readSingleScore('left_current');
+  const right = readSingleScore('right_current');
+  let label = '両チームのスコアを入力すると、このホールのポイントを自動表示します。';
+  if (left !== null && right !== null) {
+    if (left < right) label = `このホール：左チーム 3pt / 右チーム 0pt`;
+    else if (left > right) label = `このホール：左チーム 0pt / 右チーム 3pt`;
+    else label = `このホール：左チーム 1pt / 右チーム 1pt`;
+  }
+  document.getElementById('finalPointPreview').textContent = label;
+}
+function updateFinalLive() {
+  saveFinalCurrentToMemory();
+  renderHoleNav('finalHoleNav', finalCompletionClass);
+  renderFinalPointPreview();
+}
+function saveFinalCurrentToMemory() {
+  const match = JR.getFinalMatches(data).find(m => m.key === device.matchKey);
+  if (!match) return;
+  const pairIndex = Number(device.pairIndex || 0);
+  const leftScores = JR.getFinalScores(data, match.key, match.leftTeamId, pairIndex);
+  const rightScores = JR.getFinalScores(data, match.key, match.rightTeamId, pairIndex);
+  leftScores[currentHole] = readSingleScore('left_current');
+  rightScores[currentHole] = readSingleScore('right_current');
+  JR.setFinalScores(data, match.key, match.leftTeamId, pairIndex, leftScores);
+  JR.setFinalScores(data, match.key, match.rightTeamId, pairIndex, rightScores);
+}
+function renderFinalReview(match, pairIndex) {
+  const leftScores = JR.getFinalScores(data, match.key, match.leftTeamId, pairIndex);
+  const rightScores = JR.getFinalScores(data, match.key, match.rightTeamId, pairIndex);
+  const pts = JR.pointsForScores(leftScores, rightScores);
+  const conf = JR.getConfirmation(data, 'final', match.key, String(pairIndex));
+  const leftPair = JR.getPair(data, match.leftTeamId, 'final', pairIndex);
+  const rightPair = JR.getPair(data, match.rightTeamId, 'final', pairIndex);
+  document.getElementById('finalReviewTable').innerHTML = `<thead><tr><th class="sticky-label">対象</th>${JR.holeHeaders()}<th>OUT</th><th>IN</th><th>18H TOTAL</th><th>pt</th><th>状態</th></tr></thead><tbody>
+    <tr><th class="sticky-label">PAR</th>${data.meta.parByHole.map(p=>`<td>${p}</td>`).join('')}<td>36</td><td>35</td><td>71</td><td></td><td></td></tr>
+    <tr><th class="sticky-label team-pair-label">${JR.escapeHtml(match.leftTeam?.name || '左')}<br><small>${JR.escapeHtml(leftPair.label)}</small></th>${leftScores.map((v,i)=>`<td class="${i === currentHole ? 'current-hole-cell' : ''}">${v ?? '-'}</td>`).join('')}${totalsCells(leftScores)}<td class="point-cell">${JR.sumPoints(pts.leftPts)}</td><td rowspan="4">${statusPill(conf)}</td></tr>
+    <tr class="point-row"><th class="sticky-label">左pt</th>${pointCells(pts.leftPts)}</tr>
+    <tr><th class="sticky-label team-pair-label">${JR.escapeHtml(match.rightTeam?.name || '右')}<br><small>${JR.escapeHtml(rightPair.label)}</small></th>${rightScores.map((v,i)=>`<td class="${i === currentHole ? 'current-hole-cell' : ''}">${v ?? '-'}</td>`).join('')}${totalsCells(rightScores)}<td class="point-cell">${JR.sumPoints(pts.rightPts)}</td></tr>
+    <tr class="point-row"><th class="sticky-label">右pt</th>${pointCells(pts.rightPts)}</tr>
+  </tbody>`;
+  document.getElementById('finalProgressText').textContent = `入力済み 左${JR.completedHoles(leftScores)}/18・右${JR.completedHoles(rightScores)}/18`;
+}
+function saveFinal(confirmToo=false) {
+  saveFinalCurrentToMemory();
+  const match = JR.getFinalMatches(data).find(m => m.key === device.matchKey);
+  const pairIndex = Number(device.pairIndex || 0);
+  const inputterName = document.getElementById('inputterName').value.trim();
+  device.inputterName = inputterName;
+  JR.setDeviceAssignment(device);
+  if (confirmToo && !assignedCompleteFinal(match, pairIndex)) return alert('未入力ホールがあります。左右チームとも全18H入力後に同伴確認済みにしてください。');
+  JR.updateConfirmation(data, 'final', match.key, String(pairIndex), Object.assign({ savedAt: new Date().toISOString(), inputterName }, confirmToo ? { companionConfirmed: true, companionConfirmedAt: new Date().toISOString() } : {}));
+  JR.saveData(data);
+  JR.toast(confirmToo ? '保存し、同伴確認済みにしました' : `${holeName()}を保存しました`);
+  renderAll();
+}
+function moveHole(delta) {
+  saveCurrentHoleToMemory();
+  setCurrentHole(currentHole + delta);
+  renderAll();
+}
+function renderAll() {
+  renderBase();
+  renderRound1();
+  renderFinal();
+}
+document.addEventListener('DOMContentLoaded', () => {
+  data = JR.loadData();
+  device = JR.getDeviceAssignment();
+  JR.onDataChanged(next => { data = next; renderAll(); });
+  renderAll();
+  document.getElementById('saveRound1').addEventListener('click', () => saveRound1(false));
+  document.getElementById('confirmRound1').addEventListener('click', () => saveRound1(true));
+  document.getElementById('saveFinal').addEventListener('click', () => saveFinal(false));
+  document.getElementById('confirmFinal').addEventListener('click', () => saveFinal(true));
+  document.getElementById('round1Prev').addEventListener('click', () => moveHole(-1));
+  document.getElementById('round1Next').addEventListener('click', () => moveHole(1));
+  document.getElementById('finalPrev').addEventListener('click', () => moveHole(-1));
+  document.getElementById('finalNext').addEventListener('click', () => moveHole(1));
+  document.getElementById('unlockDevice').addEventListener('click', () => {
+    const pw = prompt('本部解除PWを入力してください。');
+    if (pw !== '000000') return alert('解除PWが違います。');
+    JR.clearDeviceAssignment();
+    location.reload();
+  });
+});
+</script>
+</body>
+</html>

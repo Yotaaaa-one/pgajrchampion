@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<title>1R成績表 | Jr Team Score</title>
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="styles.css">
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script defer src="firebase-config.js"></script>
+<script src="app.js" defer></script>
+
+</head>
+<body>
+<header class="page-header print-header">
+  <p class="eyebrow">1R Result</p>
+  <h1>1回戦成績表</h1>
+  <p id="metaLine"></p>
+</header>
+
+<nav class="top-nav">
+  <a href="index.html">トップ</a>
+  <a href="setup.html">設定</a>
+  <a href="round1.html">1日目入力</a>
+  <a href="round1_result.html">1R成績表</a>
+  <a href="final.html">順位決定戦入力</a>
+  <a href="final_result.html">順位決定戦表</a>
+  <a href="device_setup.html">端末設定</a>
+  <a href="scorer.html">スコアラー端末</a>
+  <a href="hq_status.html">本部状況</a>
+</nav>
+<div class="sync-strip"><span data-sync-status>同期状態確認中</span><span>最終更新：<b data-updated-at>-</b></span></div>
+
+
+<main class="container wide">
+  <section class="button-row no-print">
+    <button id="exportCsv">1R成績CSV出力</button>
+    <button class="secondary" onclick="window.print()">印刷</button>
+  </section>
+  <section class="result-layout" id="result"></section>
+  <section class="card no-print">
+    <h2>順位決定戦 自動生成</h2>
+    <div id="matchesPreview" class="match-preview"></div>
+  </section>
+</main>
+<script>
+function teamTable(data, rankRow) {
+  const team = rankRow.team;
+  const pairRows = Array.from({length:8}, (_, i) => {
+    const pair = JR.getPair(data, team.id, 'round1', i);
+    const s = JR.getRound1Scores(data, team.id, i);
+    return `<tr><td>${i+1}</td><td class="name-cell">${JR.escapeHtml(pair.label)}<br><small>${JR.escapeHtml(pair.schools)}</small></td><td>${JR.formatNum(JR.sumScores(s,0,9))}</td><td>${JR.formatNum(JR.sumScores(s,9,18))}</td><td>${JR.formatNum(JR.sumScores(s))}</td></tr>`;
+  }).join('');
+  return `<article class="result-team-card"><div class="rank-side">${rankRow.rank}位</div><div class="team-result-body"><h3>${JR.escapeHtml(team.name)} <small>${JR.escapeHtml(team.color || '')}</small></h3><table class="round1-result-table"><colgroup><col class="pair-col"><col class="name-col"><col class="score-col"><col class="score-col"><col class="total-col"></colgroup><thead><tr><th>ペア</th><th>名前 / 学校名</th><th>OUT</th><th>IN</th><th>18H TOTAL</th></tr></thead><tbody>${pairRows}</tbody><tfoot><tr><th colspan="4">GRAND TOTAL</th><th>${JR.formatNum(rankRow.total)}</th></tr></tfoot></table></div></article>`;
+}
+function render() {
+  const data = JR.loadData();
+  document.getElementById('metaLine').textContent = `${data.meta.competitionName}　${data.meta.venue}`;
+  const html = ['A','B'].map(block => `<div class="block-column"><h2>${block}ブロック</h2>${JR.rankTeamsInBlock(data, block).map(r => teamTable(data, r)).join('')}</div>`).join('');
+  document.getElementById('result').innerHTML = html;
+  document.getElementById('matchesPreview').innerHTML = JR.getFinalMatches(data).map(m => `<div class="match-chip"><strong>${m.title}</strong><span>${JR.escapeHtml(m.leftTeam?.name || '-')} VS ${JR.escapeHtml(m.rightTeam?.name || '-')}</span></div>`).join('');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  render();
+  JR.onDataChanged(() => render());
+  document.getElementById('exportCsv').addEventListener('click', () => JR.downloadText('round1_result.csv', JR.buildRound1CSV(JR.loadData()), 'text/csv'));
+});
+</script>
+</body>
+</html>
