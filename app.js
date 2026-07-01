@@ -3,7 +3,7 @@
   'use strict';
 
   const STORAGE_KEY = 'jrTeamScoreV2.data';
-  const VERSION = '2.0.0-firebase';
+  const VERSION = '2.1.0-firebase-nested-array-fix';
   const DEVICE_KEY = 'jrTeamScoreV2.device';
   const REGIONS = [
     { id: 'chugoku', name: '中国地区', block: 'A', color: '蛍光ピンク' },
@@ -69,7 +69,7 @@
         }
         const payload = snapshot.data() || {};
         if (!payload.data) return;
-        const remote = normalizeData(payload.data);
+        const remote = normalizeData(decodeFirestoreValue(payload.data));
         localStorage.setItem(STORAGE_KEY, JSON.stringify(remote));
         syncState.lastSource = 'firebase';
         notifyDataChanged(remote, 'firebase');
@@ -93,7 +93,7 @@
     const payload = {
       tournamentId: getTournamentId(),
       version: VERSION,
-      data: clone(data),
+      data: encodeFirestoreValue(clone(data)),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAtLocal: new Date().toISOString()
     };
@@ -198,6 +198,51 @@
 
   function clone(obj) {
     return JSON.parse(JSON.stringify(obj));
+  }
+
+
+  // Firestoreは「配列の中に配列」を保存できないため、同期時だけ配列をMap形式に変換する。
+  // 画面側・localStorage側では従来どおり配列として扱う。
+  const FIRESTORE_ARRAY_MARKER = '__jrArray';
+
+  function encodeFirestoreValue(value) {
+    if (Array.isArray(value)) {
+      const items = {};
+      value.forEach((item, index) => {
+        items[String(index)] = encodeFirestoreValue(item);
+      });
+      return { [FIRESTORE_ARRAY_MARKER]: true, items };
+    }
+    if (value && typeof value === 'object') {
+      const out = {};
+      Object.keys(value).forEach(key => {
+        if (typeof value[key] !== 'undefined') {
+          out[key] = encodeFirestoreValue(value[key]);
+        }
+      });
+      return out;
+    }
+    return value;
+  }
+
+  function decodeFirestoreValue(value) {
+    if (value && typeof value === 'object' && value[FIRESTORE_ARRAY_MARKER] === true) {
+      const items = value.items || {};
+      return Object.keys(items)
+        .sort((a, b) => Number(a) - Number(b))
+        .map(key => decodeFirestoreValue(items[key]));
+    }
+    if (Array.isArray(value)) {
+      return value.map(decodeFirestoreValue);
+    }
+    if (value && typeof value === 'object') {
+      const out = {};
+      Object.keys(value).forEach(key => {
+        out[key] = decodeFirestoreValue(value[key]);
+      });
+      return out;
+    }
+    return value;
   }
 
   function loadData() {
@@ -749,6 +794,8 @@
     saveData,
     resetData,
     importData,
+    encodeFirestoreValue,
+    decodeFirestoreValue,
     getTeam,
     scoreValue,
     normalizeScoreArray,
